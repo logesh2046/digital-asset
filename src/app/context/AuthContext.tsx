@@ -4,6 +4,7 @@ interface User {
   id: string;
   name: string;
   email: string;
+  role: 'user' | 'admin';
 }
 
 interface AuthContextType {
@@ -29,12 +30,12 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         headers: { Authorization: `Bearer ${storedToken}` },
       })
         .then((res) => {
-            if (res.ok) return res.json();
-            throw new Error('Failed to fetch user');
+          if (res.ok) return res.json();
+          throw new Error('Failed to fetch user');
         })
         .then((userData) => {
-            setUser({ id: userData._id, name: userData.name, email: userData.email });
-            setToken(storedToken);
+          setUser({ id: userData._id, name: userData.name, email: userData.email, role: userData.role });
+          setToken(storedToken);
         })
         .catch(() => {
           logout();

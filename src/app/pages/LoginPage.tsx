@@ -183,17 +183,7 @@ export function LoginPage() {
             </p>
           </motion.div>
 
-          {/* Demo Credentials */}
-          <motion.div
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            transition={{ delay: 0.7 }}
-            className="mt-6 p-4 bg-gradient-to-r from-purple-50 to-pink-50 rounded-xl border border-purple-200"
-          >
-            <p className="text-xs text-gray-600 text-center">
-              💡 <strong>Demo:</strong> Create an account or use existing credentials
-            </p>
-          </motion.div>
+          
         </div>
       </motion.div>
     </div>

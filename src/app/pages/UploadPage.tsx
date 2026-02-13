@@ -1,122 +1,92 @@
-import { useState } from 'react';
+import { useState, useCallback } from 'react';
+import { useDropzone } from 'react-dropzone';
+import { motion, AnimatePresence } from 'motion/react';
+import { Upload, Lock, Globe, Share2, Shield, AlertCircle } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
-import { motion } from 'motion/react';
-import {
-  Upload,
-  ArrowLeft,
-  File,
-  Image,
-  Video,
-  Music,
-  FileText,
-  X,
-  Check,
-  Database,
-} from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import { Button } from '../components/ui/button';
 import { Input } from '../components/ui/input';
 import { Label } from '../components/ui/label';
-import { Textarea } from '../components/ui/textarea';
+import { Progress } from '../components/ui/progress';
 import { Card } from '../components/ui/card';
-import { Badge } from '../components/ui/badge';
 import { toast } from 'sonner';
 
-interface FilePreview {
-  file: File;
-  type: 'image' | 'video' | 'audio' | 'document';
-  preview?: string;
-}
+
 
 export function UploadPage() {
   const navigate = useNavigate();
   const { token } = useAuth();
-  const [selectedFiles, setSelectedFiles] = useState<FilePreview[]>([]);
-  const [fileName, setFileName] = useState('');
-  const [description, setDescription] = useState('');
-  const [tags, setTags] = useState<string[]>([]);
-  const [currentTag, setCurrentTag] = useState('');
-  const [isDragging, setIsDragging] = useState(false);
-  const [isUploading, setIsUploading] = useState(false);
+  const [file, setFile] = useState<File | null>(null);
+  const [uploading, setUploading] = useState(false);
+  const [progress, setProgress] = useState(0);
+  const [tags, setTags] = useState<string>('');
 
-  const getFileType = (file: File): 'image' | 'video' | 'audio' | 'document' => {
-    const type = file.type;
-    if (type.startsWith('image/')) return 'image';
-    if (type.startsWith('video/')) return 'video';
-    if (type.startsWith('audio/')) return 'audio';
-    return 'document';
-  };
+  // Privacy State
+  const [visibility, setVisibility] = useState<'private' | 'shared' | 'public'>('private');
+  const [pin, setPin] = useState('');
+  const [confirmPin, setConfirmPin] = useState('');
 
-  const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const files = Array.from(e.target.files || []);
-    processFiles(files);
-  };
-
-  const processFiles = (files: File[]) => {
-    const newFiles = files.map((file) => {
-      const type = getFileType(file);
-      const preview = type === 'image' ? URL.createObjectURL(file) : undefined;
-      return { file, type, preview };
-    });
-    setSelectedFiles([...selectedFiles, ...newFiles]);
-    if (!fileName && newFiles.length > 0) {
-      setFileName(newFiles[0].file.name);
+  const onDrop = useCallback((acceptedFiles: File[]) => {
+    if (acceptedFiles?.[0]) {
+      setFile(acceptedFiles[0]);
     }
-  };
+  }, []);
 
-  const handleDragOver = (e: React.DragEvent) => {
-    e.preventDefault();
-    setIsDragging(true);
-  };
+  const { getRootProps, getInputProps, isDragActive } = useDropzone({
+    onDrop,
+    maxFiles: 1,
+  });
 
-  const handleDragLeave = (e: React.DragEvent) => {
-    e.preventDefault();
-    setIsDragging(false);
-  };
+  const handleUpload = async () => {
+    if (!file) return;
 
-  const handleDrop = (e: React.DragEvent) => {
-    e.preventDefault();
-    setIsDragging(false);
-    const files = Array.from(e.dataTransfer.files);
-    processFiles(files);
-  };
-
-  const removeFile = (index: number) => {
-    const newFiles = selectedFiles.filter((_, i) => i !== index);
-    setSelectedFiles(newFiles);
-    if (newFiles.length === 0) {
-      setFileName('');
-    }
-  };
-
-  const addTag = () => {
-    if (currentTag.trim() && !tags.includes(currentTag.trim())) {
-      setTags([...tags, currentTag.trim()]);
-      setCurrentTag('');
-    }
-  };
-
-  const removeTag = (tagToRemove: string) => {
-    setTags(tags.filter((tag) => tag !== tagToRemove));
-  };
-
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-
-    if (selectedFiles.length === 0) {
-      toast.error('Please select at least one file');
-      return;
+    // Validate PIN
+    if ((visibility === 'private' || visibility === 'shared') && pin) {
+      if (pin !== confirmPin) {
+        toast.error('PINs do not match');
+        return;
+      }
+      if (pin.length < 4) {
+        toast.error('PIN must be at least 4 digits');
+        return;
+      }
     }
 
-    setIsUploading(true);
+    setUploading(true);
+    const formData = new FormData();
+    formData.append('file', file);
+    formData.append('name', file.name);
+    // Determine type based on mime
+    const type = file.type.startsWith('image/') ? 'image' :
+      file.type.startsWith('video/') ? 'video' :
+        file.type.startsWith('audio/') ? 'audio' : 'document';
+    formData.append('type', type);
+
+    // Size string
+    const size = (file.size / (1024 * 1024)).toFixed(2) + ' MB';
+    formData.append('size', size);
+
+    // Tags
+    const tagArray = tags.split(',').map(t => t.trim()).filter(Boolean);
+    formData.append('tags', JSON.stringify(tagArray));
+
+    // Privacy
+    formData.append('visibility', visibility);
+    if (pin) {
+      formData.append('pin', pin);
+    }
 
     try {
-      const formData = new FormData();
-      formData.append('file', selectedFiles[0].file);
-      formData.append('name', fileName || selectedFiles[0].file.name);
-      formData.append('type', selectedFiles[0].type);
-      formData.append('size', `${(selectedFiles[0].file.size / (1024 * 1024)).toFixed(2)} MB`);
-      formData.append('tags', JSON.stringify(tags));
+      // Simulate progress
+      const interval = setInterval(() => {
+        setProgress((prev) => {
+          if (prev >= 95) {
+            clearInterval(interval);
+            return 95;
+          }
+          return prev + 10;
+        });
+      }, 200);
 
       const res = await fetch('http://localhost:5000/api/assets/upload', {
         method: 'POST',
@@ -124,354 +94,187 @@ export function UploadPage() {
         body: formData,
       });
 
-      if (!res.ok) throw new Error('Upload failed');
+      clearInterval(interval);
+      setProgress(100);
 
-      toast.success('Asset uploaded successfully!');
-      navigate('/home');
+      if (res.ok) {
+        toast.success('File uploaded successfully!');
+        setTimeout(() => navigate('/home'), 500);
+      } else {
+        throw new Error('Upload failed');
+      }
     } catch (error) {
-      toast.error('Failed to upload asset');
-    } finally {
-      setIsUploading(false);
-    }
-  };
-
-  const getFileIcon = (type: string) => {
-    switch (type) {
-      case 'image':
-        return <Image className="w-6 h-6" />;
-      case 'video':
-        return <Video className="w-6 h-6" />;
-      case 'audio':
-        return <Music className="w-6 h-6" />;
-      case 'document':
-        return <FileText className="w-6 h-6" />;
-      default:
-        return <File className="w-6 h-6" />;
-    }
-  };
-
-  const getTypeColor = (type: string) => {
-    switch (type) {
-      case 'image':
-        return 'from-purple-500 to-pink-500';
-      case 'video':
-        return 'from-blue-500 to-cyan-500';
-      case 'audio':
-        return 'from-green-500 to-teal-500';
-      case 'document':
-        return 'from-orange-500 to-red-500';
-      default:
-        return 'from-gray-500 to-slate-500';
+      toast.error('Failed to upload file');
+      setUploading(false);
+      setProgress(0);
     }
   };
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-indigo-50 via-purple-50 to-pink-50">
-      {/* Header */}
-      <motion.header
-        initial={{ y: -100 }}
-        animate={{ y: 0 }}
-        className="bg-white/80 backdrop-blur-lg border-b border-gray-200"
-      >
-        <div className="max-w-5xl mx-auto px-4 sm:px-6 lg:px-8 py-4">
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-3">
-              <Button
-                variant="outline"
-                size="icon"
-                onClick={() => navigate('/home')}
-                className="rounded-xl"
-              >
-                <ArrowLeft className="w-5 h-5" />
-              </Button>
-              <div className="w-12 h-12 bg-gradient-to-br from-indigo-600 to-purple-600 rounded-xl flex items-center justify-center shadow-lg">
-                <Database className="w-6 h-6 text-white" />
-              </div>
-              <div>
-                <h1 className="text-2xl font-bold bg-gradient-to-r from-indigo-600 to-purple-600 bg-clip-text text-transparent">
-                  Upload Assets
-                </h1>
-                <p className="text-sm text-gray-600">Add new files to your digital library</p>
-              </div>
+    <div className="max-w-2xl mx-auto space-y-6">
+      <div>
+        <h1 className="text-2xl font-bold text-gray-900">Upload Asset</h1>
+        <p className="text-gray-500">Add secure files to your vault</p>
+      </div>
+
+      <div className="grid gap-6">
+        {/* Dropzone */}
+        <div
+          {...getRootProps()}
+          className={`
+            border-2 border-dashed rounded-2xl p-10 text-center cursor-pointer transition-all duration-300
+            ${isDragActive ? 'border-purple-500 bg-purple-50' : 'border-gray-200 hover:border-purple-300 hover:bg-gray-50'}
+            ${file ? 'bg-purple-50 border-purple-500' : 'bg-white'}
+          `}
+        >
+          <input {...getInputProps()} />
+          <div className="flex flex-col items-center gap-4">
+            <div className={`w-16 h-16 rounded-full flex items-center justify-center ${file ? 'bg-purple-100 text-purple-600' : 'bg-gray-100 text-gray-400'}`}>
+              <Upload className="w-8 h-8" />
             </div>
+            {file ? (
+              <div>
+                <p className="font-semibold text-gray-900">{file.name}</p>
+                <p className="text-sm text-gray-500">{(file.size / (1024 * 1024)).toFixed(2)} MB</p>
+              </div>
+            ) : (
+              <div>
+                <p className="font-medium text-gray-700">Drag & drop or click to upload</p>
+                <p className="text-sm text-gray-400 mt-1">Supports Image, Video, Audio, Docs</p>
+              </div>
+            )}
           </div>
         </div>
-      </motion.header>
 
-      {/* Main Content */}
-      <main className="max-w-5xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
-        <form onSubmit={handleSubmit} className="space-y-6">
-          {/* File Drop Zone */}
-          <motion.div
-            initial={{ opacity: 0, y: 20 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ delay: 0.1 }}
-          >
-            <Card className="p-8 border-2 border-dashed hover:border-solid transition-all">
+        {/* Form Options */}
+        <Card className="p-6 space-y-6">
+          <div className="space-y-2">
+            <Label>Tags (Mandatory)</Label>
+            <Input
+              id="asset-tags"
+              name="asset-tags"
+              autoComplete="off"
+              placeholder="nature, project, secret (comma separated)"
+              value={tags}
+              onChange={(e) => setTags(e.target.value)}
+            />
+          </div>
+
+          <div className="space-y-4 pt-4 border-t border-gray-100">
+            <div className="flex items-center gap-2">
+              <Shield className="w-5 h-5 text-purple-600" />
+              <h3 className="font-semibold text-gray-900">Privacy Settings</h3>
+            </div>
+
+            {/* Visibility Selection */}
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
               <div
-                onDragOver={handleDragOver}
-                onDragLeave={handleDragLeave}
-                onDrop={handleDrop}
-                className={`relative ${
-                  isDragging ? 'bg-gradient-to-br from-indigo-50 to-purple-50' : ''
-                } rounded-2xl transition-colors`}
+                onClick={() => setVisibility('private')}
+                className={`cursor-pointer p-4 rounded-xl border-2 transition-all ${visibility === 'private' ? 'border-purple-500 bg-purple-50 ring-2 ring-purple-200' : 'border-gray-200 hover:border-purple-200'}`}
               >
-                <input
-                  type="file"
-                  id="file-upload"
-                  multiple
-                  onChange={handleFileSelect}
-                  className="absolute inset-0 w-full h-full opacity-0 cursor-pointer z-10"
-                  accept="image/*,video/*,audio/*,.pdf,.doc,.docx,.txt"
-                />
-                <div className="text-center py-12">
-                  <motion.div
-                    animate={{
-                      y: [0, -10, 0],
-                    }}
-                    transition={{
-                      duration: 2,
-                      repeat: Infinity,
-                      ease: "easeInOut",
-                    }}
-                    className="inline-block"
-                  >
-                    <div className="w-20 h-20 bg-gradient-to-br from-indigo-600 to-purple-600 rounded-2xl flex items-center justify-center mx-auto mb-4 shadow-xl">
-                      <Upload className="w-10 h-10 text-white" />
-                    </div>
-                  </motion.div>
-                  <h3 className="text-xl font-semibold text-gray-800 mb-2">
-                    Drop files here or click to browse
-                  </h3>
-                  <p className="text-gray-600 mb-4">
-                    Support for images, videos, audio files, and documents
-                  </p>
-                  <div className="flex justify-center gap-2 flex-wrap">
-                    <Badge variant="secondary" className="rounded-full">
-                      <Image className="w-3 h-3 mr-1" />
-                      Images
-                    </Badge>
-                    <Badge variant="secondary" className="rounded-full">
-                      <Video className="w-3 h-3 mr-1" />
-                      Videos
-                    </Badge>
-                    <Badge variant="secondary" className="rounded-full">
-                      <Music className="w-3 h-3 mr-1" />
-                      Audio
-                    </Badge>
-                    <Badge variant="secondary" className="rounded-full">
-                      <FileText className="w-3 h-3 mr-1" />
-                      Documents
-                    </Badge>
-                  </div>
+                <div className="flex flex-col gap-2">
+                  <Lock className={`w-6 h-6 ${visibility === 'private' ? 'text-purple-600' : 'text-gray-400'}`} />
+                  <span className="font-medium">Private</span>
+                  <span className="text-xs text-gray-500">Only you can see this. PIN optional.</span>
                 </div>
               </div>
-            </Card>
-          </motion.div>
 
-          {/* Selected Files Preview */}
-          {selectedFiles.length > 0 && (
-            <motion.div
-              initial={{ opacity: 0, y: 20 }}
-              animate={{ opacity: 1, y: 0 }}
-              transition={{ delay: 0.2 }}
-            >
-              <Card className="p-6">
-                <h3 className="text-lg font-semibold text-gray-800 mb-4">Selected Files</h3>
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                  {selectedFiles.map((filePreview, index) => (
-                    <motion.div
-                      key={index}
-                      initial={{ opacity: 0, scale: 0.9 }}
-                      animate={{ opacity: 1, scale: 1 }}
-                      transition={{ delay: index * 0.1 }}
-                      className="relative"
-                    >
-                      <Card className="p-4 border-2 hover:border-purple-300 transition-colors">
-                        <div className="flex items-center gap-3">
-                          <div className={`w-12 h-12 bg-gradient-to-br ${getTypeColor(filePreview.type)} rounded-xl flex items-center justify-center flex-shrink-0`}>
-                            <div className="text-white">
-                              {getFileIcon(filePreview.type)}
-                            </div>
-                          </div>
-                          <div className="flex-1 min-w-0">
-                            <p className="font-medium text-gray-800 truncate">
-                              {filePreview.file.name}
-                            </p>
-                            <p className="text-sm text-gray-600">
-                              {(filePreview.file.size / (1024 * 1024)).toFixed(2)} MB
-                            </p>
-                          </div>
-                          <Button
-                            type="button"
-                            variant="outline"
-                            size="icon"
-                            onClick={() => removeFile(index)}
-                            className="rounded-full h-8 w-8 flex-shrink-0"
-                          >
-                            <X className="w-4 h-4" />
-                          </Button>
-                        </div>
-                      </Card>
-                    </motion.div>
-                  ))}
-                </div>
-              </Card>
-            </motion.div>
-          )}
-
-          {/* Asset Details Form */}
-          {selectedFiles.length > 0 && (
-            <motion.div
-              initial={{ opacity: 0, y: 20 }}
-              animate={{ opacity: 1, y: 0 }}
-              transition={{ delay: 0.3 }}
-            >
-              <Card className="p-6">
-                <h3 className="text-lg font-semibold text-gray-800 mb-6">Asset Details</h3>
-                <div className="space-y-6">
-                  {/* File Name */}
-                  <div>
-                    <Label htmlFor="fileName" className="text-gray-700">Asset Name</Label>
-                    <Input
-                      id="fileName"
-                      type="text"
-                      placeholder="Enter asset name"
-                      value={fileName}
-                      onChange={(e) => setFileName(e.target.value)}
-                      className="mt-2 h-12 rounded-xl border-2"
-                      required
-                    />
-                  </div>
-
-                  {/* Description */}
-                  <div>
-                    <Label htmlFor="description" className="text-gray-700">Description (Optional)</Label>
-                    <Textarea
-                      id="description"
-                      placeholder="Add a description for this asset..."
-                      value={description}
-                      onChange={(e) => setDescription(e.target.value)}
-                      className="mt-2 rounded-xl border-2 min-h-[100px]"
-                    />
-                  </div>
-
-                  {/* Tags */}
-                  <div>
-                    <Label htmlFor="tags" className="text-gray-700">Tags</Label>
-                    <div className="flex gap-2 mt-2">
-                      <Input
-                        id="tags"
-                        type="text"
-                        placeholder="Add a tag..."
-                        value={currentTag}
-                        onChange={(e) => setCurrentTag(e.target.value)}
-                        onKeyPress={(e) => {
-                          if (e.key === 'Enter') {
-                            e.preventDefault();
-                            addTag();
-                          }
-                        }}
-                        className="h-12 rounded-xl border-2"
-                      />
-                      <Button
-                        type="button"
-                        onClick={addTag}
-                        variant="outline"
-                        className="rounded-xl px-6"
-                      >
-                        Add
-                      </Button>
-                    </div>
-                    {tags.length > 0 && (
-                      <div className="flex flex-wrap gap-2 mt-3">
-                        {tags.map((tag) => (
-                          <Badge
-                            key={tag}
-                            variant="secondary"
-                            className="rounded-full px-3 py-1 cursor-pointer hover:bg-red-100"
-                            onClick={() => removeTag(tag)}
-                          >
-                            {tag}
-                            <X className="w-3 h-3 ml-1" />
-                          </Badge>
-                        ))}
-                      </div>
-                    )}
-                  </div>
-                </div>
-              </Card>
-            </motion.div>
-          )}
-
-          {/* Submit Buttons */}
-          {selectedFiles.length > 0 && (
-            <motion.div
-              initial={{ opacity: 0, y: 20 }}
-              animate={{ opacity: 1, y: 0 }}
-              transition={{ delay: 0.4 }}
-              className="flex gap-4"
-            >
-              <Button
-                type="button"
-                variant="outline"
-                onClick={() => navigate('/home')}
-                className="flex-1 h-12 rounded-xl"
+              <div
+                onClick={() => setVisibility('shared')}
+                className={`cursor-pointer p-4 rounded-xl border-2 transition-all ${visibility === 'shared' ? 'border-blue-500 bg-blue-50 ring-2 ring-blue-200' : 'border-gray-200 hover:border-blue-200'}`}
               >
-                Cancel
-              </Button>
-              <Button
-                type="submit"
-                disabled={isUploading}
-                className="flex-1 h-12 bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-700 hover:to-purple-700 text-white rounded-xl shadow-lg"
-              >
-                {isUploading ? (
-                  <>
-                    <motion.div
-                      animate={{ rotate: 360 }}
-                      transition={{ duration: 1, repeat: Infinity, ease: "linear" }}
-                      className="mr-2"
-                    >
-                      <Upload className="w-5 h-5" />
-                    </motion.div>
-                    Uploading...
-                  </>
-                ) : (
-                  <>
-                    <Check className="w-5 h-5 mr-2" />
-                    Upload Asset
-                  </>
-                )}
-              </Button>
-            </motion.div>
-          )}
-        </form>
-
-        {/* Info Card */}
-        <motion.div
-          initial={{ opacity: 0 }}
-          animate={{ opacity: 1 }}
-          transition={{ delay: 0.5 }}
-          className="mt-8"
-        >
-          <Card className="p-6 bg-gradient-to-r from-indigo-50 to-purple-50 border-indigo-200">
-            <div className="flex items-start gap-3">
-              <div className="w-10 h-10 bg-gradient-to-br from-indigo-600 to-purple-600 rounded-full flex items-center justify-center flex-shrink-0">
-                <Upload className="w-5 h-5 text-white" />
+                <div className="flex flex-col gap-2">
+                  <Share2 className={`w-6 h-6 ${visibility === 'shared' ? 'text-blue-600' : 'text-gray-400'}`} />
+                  <span className="font-medium">Shared</span>
+                  <span className="text-xs text-gray-500">Accessible via secure link.</span>
+                </div>
               </div>
-              <div>
-                <h4 className="font-semibold text-gray-800 mb-1">Upload Tips</h4>
-                <ul className="text-sm text-gray-600 space-y-1">
-                  <li>• Maximum file size: 50MB per file</li>
-                  <li>• Add relevant tags to make your assets easy to find</li>
-                  <li>• Use descriptive names for better organization</li>
-                  <li>• Supported formats: Images (JPG, PNG, GIF), Videos (MP4, AVI), Audio (MP3, WAV), Documents (PDF, DOC, TXT)</li>
-                </ul>
+
+              <div
+                onClick={() => setVisibility('public')}
+                className={`cursor-pointer p-4 rounded-xl border-2 transition-all ${visibility === 'public' ? 'border-green-500 bg-green-50 ring-2 ring-green-200' : 'border-gray-200 hover:border-green-200'}`}
+              >
+                <div className="flex flex-col gap-2">
+                  <Globe className={`w-6 h-6 ${visibility === 'public' ? 'text-green-600' : 'text-gray-400'}`} />
+                  <span className="font-medium">Public</span>
+                  <span className="text-xs text-gray-500">Anyone can find and view.</span>
+                </div>
               </div>
             </div>
-          </Card>
-        </motion.div>
-      </main>
+
+            {/* PIN Settings (Only for Private/Shared) */}
+            <AnimatePresence>
+              {(visibility === 'private' || visibility === 'shared') && (
+                <motion.div
+                  initial={{ height: 0, opacity: 0 }}
+                  animate={{ height: 'auto', opacity: 1 }}
+                  exit={{ height: 0, opacity: 0 }}
+                  className="bg-gray-50 p-4 rounded-xl space-y-4"
+                >
+                  <div className="flex items-center gap-2 mb-2">
+                    <Lock className="w-4 h-4 text-gray-500" />
+                    <span className="font-medium text-sm text-gray-700">Encryption PIN (Optional for Private)</span>
+                  </div>
+                  <div className="grid grid-cols-2 gap-4">
+                    <div className="space-y-2">
+                      <Label>Set PIN</Label>
+                      <Input
+                        id="asset-pin"
+                        name="asset-pin"
+                        autoComplete="new-password"
+                        type="password"
+                        placeholder="Enter secure PIN"
+                        value={pin}
+                        onChange={(e) => setPin(e.target.value)}
+                        maxLength={6}
+                      />
+                    </div>
+                    <div className="space-y-2">
+                      <Label>Confirm PIN</Label>
+                      <Input
+                        id="asset-confirm-pin"
+                        name="asset-confirm-pin"
+                        autoComplete="new-password"
+                        type="password"
+                        placeholder="Repeat PIN"
+                        value={confirmPin}
+                        onChange={(e) => setConfirmPin(e.target.value)}
+                        maxLength={6}
+                      />
+                    </div>
+                  </div>
+                  <div className="flex items-start gap-2 text-xs text-amber-600 bg-amber-50 p-2 rounded">
+                    <AlertCircle className="w-4 h-4 mt-0.5" />
+                    <p>If set, this PIN will be required to open, download, or delete this file. Don't forget it!</p>
+                  </div>
+                </motion.div>
+              )}
+            </AnimatePresence>
+          </div>
+        </Card>
+
+        {/* Upload Button */}
+        <div className="flex justify-end gap-3">
+          <Button variant="ghost" onClick={() => { setFile(null); setPin(''); }}>Cancel</Button>
+          <Button
+            onClick={handleUpload}
+            className="bg-purple-600 hover:bg-purple-700 min-w-[150px]"
+            disabled={uploading || !file ? true : false}
+          >
+            {uploading ? 'Uploading...' : 'Secure Upload'}
+          </Button>
+        </div>
+
+        {uploading && (
+          <div className="space-y-2">
+            <div className="flex justify-between text-sm">
+              <span>Encrypting & Uploading...</span>
+              <span>{progress}%</span>
+            </div>
+            <Progress value={progress} className="h-2" />
+          </div>
+        )}
+      </div>
     </div>
   );
 }
