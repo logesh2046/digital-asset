@@ -9,7 +9,6 @@ import {
     Shield,
     Activity,
     Search,
-    AlertTriangle
 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import { Card } from '../components/ui/card';
@@ -282,9 +281,9 @@ export function AdminDashboard() {
                                     <div className="h-2 bg-gray-100 rounded-full overflow-hidden">
                                         <div
                                             className={`h-full rounded-full ${dist._id === 'image' ? 'bg-purple-500' :
-                                                    dist._id === 'video' ? 'bg-blue-500' :
-                                                        dist._id === 'audio' ? 'bg-green-500' :
-                                                            'bg-orange-500'
+                                                dist._id === 'video' ? 'bg-blue-500' :
+                                                    dist._id === 'audio' ? 'bg-green-500' :
+                                                        'bg-orange-500'
                                                 }`}
                                             style={{ width: `${(dist.count / (stats?.totalAssets || 1)) * 100}%` }}
                                         />
